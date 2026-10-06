@@ -1,0 +1,18 @@
+# Залежності
+node_modules/
+
+# Секрети: JWT_SECRET не має потрапити в репозиторій
+.env
+.env.*
+
+# Дані сервера: база і завантажені файли
+server/data/*
+!server/data/.gitkeep
+server/storage/*
+!server/storage/.gitkeep
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Збірка
+dist/
