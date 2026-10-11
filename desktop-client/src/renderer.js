@@ -3,14 +3,19 @@ import {
   downloadFileBlob, getCurrentUserId, getCurrentUsername,
   listSpaces, listMembers, addMember, updateMemberRole, removeShare
 } from "./api.js";
+import { getSavedDirectory, pickSyncDirectory, syncFolder, removeLocalFile } from "./sync.js";
 
 const $ = (id) => document.getElementById(id);
 const VIEWABLE = ["cs", "jpg"];
+const ROLE_LABEL = { owner: "Власник", edit: "Редагування", read: "Лише читання" };
 
 let sortDir = "asc";
 let filterType = "all";
 let objectUrl = null;
-let spaces = []; // [{ id, name, role }]
+let spaces = [];
+let syncDir = null;
+let dragDepth = 0;
+
 // ---------- Допоміжні функції ----------
 
 function el(tag, className, text) {
@@ -25,18 +30,14 @@ function button(text, className, onClick) {
   return b;
 }
 function cell(text, className) { return el("td", className, text); }
+function roleBadge(role) { return el("span", `badge badge-${role}`, ROLE_LABEL[role] ?? role); }
 
-const ROLE_LABEL = { owner: "Власник", edit: "Редагування", read: "Лише читання" };
-function roleBadge(role) {
-  return el("span", `badge badge-${role}`, ROLE_LABEL[role] ?? role);
-}
 function formatDate(iso) { return new Date(iso).toLocaleString("uk-UA"); }
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 }
-
 
 const toastContainer = $("toast-container");
 function toast(text, type = "info") {
@@ -50,7 +51,6 @@ function showAuthMessage(text) { $("auth-message").textContent = text; }
 const askReplace = (name) =>
   confirm(`Файл "${name}" уже є у просторі. Замінити його новою версією?`);
 
-// Перетворення Blob -> base64 (для передачі даних у main-процес через IPC)
 async function blobToBase64(blob) {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
@@ -58,8 +58,6 @@ async function blobToBase64(blob) {
   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
-
-// Перетворення base64 (отриманого з main-процесу) назад у File для FormData
 function base64ToFile(name, base64) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -74,6 +72,15 @@ function showApp(loggedIn) {
   $("files-section").classList.toggle("hidden", !loggedIn);
   $("panels-section").classList.toggle("hidden", !loggedIn);
   $("user-name").textContent = loggedIn ? getCurrentUsername() ?? "" : "";
+}
+
+async function enterApp() {
+  // Кожен блок ізольований: помилка в одному не блокує інші
+  syncDir = getSavedDirectory();
+  $("sync-folder").textContent = syncDir ? `Папка: ${syncDir}` : "Папка не обрана";
+  await refreshFiles();
+  await loadSpaces().catch((err) => toast(`Простори: ${err.message}`, "error"));
+  await refreshMembers();
 }
 
 $("login-btn").addEventListener("click", async () => {
@@ -102,16 +109,12 @@ $("register-btn").addEventListener("click", async () => {
 
 $("logout-btn").addEventListener("click", () => {
   clearToken();
+  syncDir = null;
   $("files-tbody").replaceChildren();
+  $("sync-folder").textContent = "";
   showAuthMessage("");
   showApp(false);
 });
-
-async function enterApp() {
-  await refreshFiles();
-  await loadSpaces().catch((err) => toast(`Простори: ${err.message}`, "error"));
-  await refreshMembers();
-}
 
 // ---------- Простори ----------
 
@@ -330,7 +333,7 @@ $("viewer").addEventListener("close", () => {
   if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
 });
 
-// ---------- Вивантаження (download) через нативний діалог збереження ----------
+// ---------- Вивантаження ----------
 
 async function downloadFile(file) {
   try {
@@ -343,44 +346,155 @@ async function downloadFile(file) {
   }
 }
 
-// ---------- Видалення ----------
+// ---------- Видалення (з трекінгом локальної копії) ----------
 
 async function deleteOwnFile(file) {
   if (!confirm(`Видалити файл "${file.name}"?`)) return;
   try {
     await deleteFile(file.id);
     toast("Файл видалено", "success");
+    await removeFromLocalIfSynced(file.name);
     await refreshFiles();
   } catch (err) {
     toast(err.message, "error");
   }
 }
 
-// ---------- Завантаження через нативний діалог вибору файлів ----------
+// Найкраще зусилля: якщо папка синхронізації обрана, прибираємо локальну копію теж,
+// щоб наступна синхронізація не "воскресила" файл на сервері
+async function removeFromLocalIfSynced(name) {
+  if (!syncDir) return;
+  try {
+    const removed = await removeLocalFile(syncDir, name);
+    if (removed) toast(`Видалено і з локальної папки: ${name}`, "info");
+  } catch (err) {
+    console.warn("Не вдалося видалити локальну копію:", err.message);
+  }
+}
 
-$("upload-btn").addEventListener("click", async () => {
-  const space = currentSpace();
+// ---------- Завантаження файлів (спільна логіка для кнопки і drag-n-drop) ----------
+
+async function saveFiles(files, space) {
   if (!space || space.role === "read") {
     toast("Оберіть простір, де можна записувати", "error");
     return;
   }
-  try {
-    const picked = await window.desktop.pickFiles();
-    if (picked.length === 0) return;
+  if (files.length === 0) return;
 
-    let saved = 0;
-    for (const { name, data } of picked) {
-      const file = base64ToFile(name, data);
-      try {
-        if (await uploadOrReplace(file, askReplace, space.id)) saved++;
-      } catch (err) {
-        toast(`${name}: ${err.message}`, "error");
-      }
+  let saved = 0;
+  for (const file of files) {
+    try {
+      if (await uploadOrReplace(file, askReplace, space.id)) saved++;
+    } catch (err) {
+      toast(`${file.name}: ${err.message}`, "error");
     }
-    toast(`Збережено ${saved} з ${picked.length}`, saved === picked.length ? "success" : "info");
-    await refreshFiles();
+  }
+  toast(`Збережено ${saved} з ${files.length}`, saved === files.length ? "success" : "info");
+  await refreshFiles();
+}
+
+$("upload-btn").addEventListener("click", async () => {
+  try {
+    const picked = await window.desktop.pickFiles(); // [{ name, data: base64 }]
+    if (picked.length === 0) return;
+    const files = picked.map(({ name, data }) => base64ToFile(name, data));
+    await saveFiles(files, currentSpace());
   } catch (err) {
     toast(err.message, "error");
+  }
+});
+
+// ---------- Drag-n-drop ----------
+
+const filesSection = $("files-section");
+
+function hasFiles(e) {
+  return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+}
+
+window.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener("drop", (e) => { if (hasFiles(e)) e.preventDefault(); });
+
+filesSection.addEventListener("dragenter", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  filesSection.classList.add("drag-over");
+});
+
+filesSection.addEventListener("dragover", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+});
+
+filesSection.addEventListener("dragleave", (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth--;
+  if (dragDepth <= 0) {
+    dragDepth = 0;
+    filesSection.classList.remove("drag-over");
+  }
+});
+
+// Файли, перетягнуті у вікно Electron, - звичайні об'єкти File стандартного Web API,
+// тому для них не потрібне IPC-читання: вони читаються так само, як у браузері
+filesSection.addEventListener("drop", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  filesSection.classList.remove("drag-over");
+
+  const items = Array.from(e.dataTransfer.items ?? []);
+  const fileItems = items.filter((item) => item.kind === "file");
+  const folderCount = fileItems.filter((item) => item.webkitGetAsEntry?.()?.isDirectory).length;
+  const files = fileItems
+    .filter((item) => !item.webkitGetAsEntry?.()?.isDirectory)
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+
+  if (folderCount > 0) toast("Папки не підтримуються, перетягніть окремі файли", "error");
+  saveFiles(files, currentSpace());
+});
+
+// ---------- Синхронізація ----------
+
+$("pick-dir-btn").addEventListener("click", async () => {
+  try {
+    const dirPath = await pickSyncDirectory();
+    if (!dirPath) return; // скасовано
+    syncDir = dirPath;
+    $("sync-folder").textContent = `Папка: ${syncDir}`;
+    toast("Папку обрано", "success");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+});
+
+$("sync-btn").addEventListener("click", async () => {
+  if (!syncDir) {
+    toast("Спочатку оберіть локальну папку", "error");
+    return;
+  }
+  const btn = $("sync-btn");
+  btn.disabled = true;
+  try {
+    const errors = [];
+    const s = await syncFolder(syncDir, { onError: (msg) => errors.push(msg) });
+    toast(
+      `Синхронізація: завантажено ${s.uploaded + s.updatedRemote}, ` +
+      `отримано ${s.downloaded + s.updatedLocal}, без змін ${s.skipped}`,
+      errors.length ? "info" : "success"
+    );
+    if (errors.length) {
+      console.warn("Помилки синхронізації:", errors);
+      toast(`Помилок: ${errors.length}. Деталі в консолі`, "error");
+    }
+    await refreshFiles();
+  } catch (err) {
+    toast(`Помилка синхронізації: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
   }
 });
 
