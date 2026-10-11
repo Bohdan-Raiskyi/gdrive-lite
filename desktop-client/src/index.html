@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <title>Файлове сховище — десктоп</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <section id="auth-section" class="card auth-card">
+    <h2>Вхід до сховища</h2>
+    <label class="field">Ім'я користувача
+      <input id="username" class="input" />
+    </label>
+    <label class="field">Пароль
+      <input id="password" type="password" class="input" />
+    </label>
+    <div class="actions">
+      <button id="login-btn" class="btn btn-primary">Увійти</button>
+      <button id="register-btn" class="btn">Зареєструватися</button>
+    </div>
+    <p id="auth-message" class="form-message"></p>
+  </section>
+
+  <section id="files-section" class="hidden">
+    <header class="app-header">
+      <span id="user-name"></span>
+      <button id="logout-btn" class="btn btn-ghost">Вийти</button>
+    </header>
+
+    <div class="card toolbar">
+      <div class="toolbar-group">
+        <label class="field-inline">Завантажувати в
+          <select id="space-select" class="input"></select>
+        </label>
+        <button id="upload-btn" class="btn btn-primary">Завантажити файл</button>
+      </div>
+      <div class="toolbar-group">
+        <label class="field-inline">Тип
+          <select id="filter-select" class="input">
+            <option value="all">Усі файли</option>
+            <option value="py">.py</option>
+            <option value="jpg">.jpg</option>
+          </select>
+        </label>
+        <button id="sort-btn" class="btn">Завантажив: А→Я</button>
+        <details class="columns-menu">
+          <summary class="btn">Стовпці</summary>
+          <div class="columns-list">
+            <label><input type="checkbox" class="col-toggle" data-col="owner" checked /> Власник</label>
+            <label><input type="checkbox" class="col-toggle" data-col="created" checked /> Створено</label>
+            <label><input type="checkbox" class="col-toggle" data-col="modified" checked /> Змінено</label>
+            <label><input type="checkbox" class="col-toggle" data-col="uploader" checked /> Завантажив</label>
+            <label><input type="checkbox" class="col-toggle" data-col="editor" checked /> Редагував</label>
+            <label><input type="checkbox" class="col-toggle" data-col="size" checked /> Розмір</label>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table id="files-table">
+          <thead>
+            <tr>
+              <th>Назва</th>
+              <th class="col-owner">Власник</th>
+              <th class="col-created">Створено</th>
+              <th class="col-modified">Змінено</th>
+              <th class="col-uploader">Завантажив</th>
+              <th class="col-editor">Редагував</th>
+              <th class="col-size">Розмір</th>
+              <th>Дії</th>
+            </tr>
+          </thead>
+          <tbody id="files-tbody"></tbody>
+        </table>
+        <p id="empty-state" class="empty hidden">Файлів ще немає</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="panels-section" class="hidden panels">
+  <div class="card">
+    <h3>Учасники мого простору</h3>
+    <div class="add-row">
+      <input id="member-username" class="input" placeholder="Логін користувача" />
+      <select id="member-role" class="input">
+        <option value="read">Читання</option>
+        <option value="edit">Редагування</option>
+      </select>
+      <button id="add-member-btn" class="btn btn-primary">Додати</button>
+    </div>
+    <div id="member-list" class="list"></div>
+  </div>
+
+  <div class="card">
+    <h3>Простори, відкриті мені</h3>
+    <div id="shared-list" class="list"></div>
+  </div>
+</section>
+
+  <dialog id="viewer">
+    <header class="dialog-header">
+      <span id="viewer-title"></span>
+      <button id="viewer-close" class="btn btn-small">Закрити</button>
+    </header>
+    <pre id="text-viewer" class="hidden"></pre>
+    <img id="image-viewer" class="hidden" alt="" />
+  </dialog>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="./renderer.js"></script>
+</body>
+</html>
