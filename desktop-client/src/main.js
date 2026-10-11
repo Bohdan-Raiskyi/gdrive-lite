@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs/promises");
 const crypto = require("crypto");
@@ -7,6 +7,8 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
+    title: "Файлове сховище",
+    icon: path.join(__dirname, "..", "assets", "icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -18,7 +20,10 @@ function createWindow() {
   // win.webContents.openDevTools();
 }
 
-// Імена, заборонені у Windows, замінюємо на "_", щоб запис на диск не падав
+// Прибираємо стандартне меню File/Edit/View - воно зайве для кінцевого користувача
+// і дає доступ до DevTools та перезавантаження, що не потрібно в "чистому" застосунку
+Menu.setApplicationMenu(null);
+
 function sanitizeName(name) {
   return name.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
 }
