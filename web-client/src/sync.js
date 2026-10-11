@@ -168,7 +168,7 @@ async function sha256(blob) {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function safeLocalName(name) {
+export function safeLocalName(name) {
   return name.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
 }
 
@@ -177,4 +177,16 @@ async function writeLocal(dirHandle, name, blob) {
   const writable = await fileHandle.createWritable();
   await writable.write(blob);
   await writable.close();
+}
+
+// Видаляє файл з локальної синхронізованої папки, якщо він там є.
+// Повертає true, якщо файл був і його видалили; false, якщо його й не було локально.
+export async function removeLocalFile(dirHandle, name) {
+  try {
+    await dirHandle.removeEntry(safeLocalName(name));
+    return true;
+  } catch (err) {
+    if (err.name === "NotFoundError") return false;
+    throw err;
+  }
 }

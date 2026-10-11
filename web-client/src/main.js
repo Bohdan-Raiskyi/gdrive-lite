@@ -3,7 +3,7 @@ import {
   downloadFileBlob, listSpaces, getCurrentUserId, getCurrentUsername,
   listMembers, addMember, updateMemberRole, removeShare
 } from "./api.js";
-import { pickSyncDirectory, getSavedDirectory, ensurePermission, syncFolder } from "./sync.js";
+import { pickSyncDirectory, getSavedDirectory, ensurePermission, syncFolder, removeLocalFile } from "./sync.js";
 
 // ---------- Стан і константи ----------
 
@@ -368,9 +368,23 @@ async function deleteOwnFile(file) {
   try {
     await deleteFile(file.id);
     toast("Файл видалено", "success");
+    await removeFromLocalIfSynced(file.name);
     await refreshFiles();
   } catch (err) {
     toast(err.message, "error");
+  }
+}
+
+// видалення працює для конкретного браузеру
+async function removeFromLocalIfSynced(name) {
+  if (!syncDir) return;
+  try {
+    const granted = await ensurePermission(syncDir);
+    if (!granted) return;
+    const removed = await removeLocalFile(syncDir, name);
+    if (removed) toast(`Видалено і з локальної папки: ${name}`, "info");
+  } catch (err) {
+    console.warn("Не вдалося видалити локальну копію:", err.message);
   }
 }
 
