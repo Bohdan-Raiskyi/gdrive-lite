@@ -2,10 +2,12 @@
   "name": "desktop-client",
   "version": "1.0.0",
   "private": true,
-  "main": "src/main.js",
+  "type": "module",
+  "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "test": "node --test test/"
   },
   "devDependencies": {
     "electron": "^41.7.1",

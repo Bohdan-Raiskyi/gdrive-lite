@@ -3,7 +3,7 @@ const fs = require("fs");
 const Database = require("better-sqlite3");
 const { hashFile } = require("./services/hash");
 
-const DB_PATH = path.join(__dirname, "..", "data", "app.sqlite");
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, "..", "data", "app.sqlite");
 const STORAGE_DIR = path.join(__dirname, "..", "storage");
 const db = new Database(DB_PATH);
 
@@ -84,4 +84,6 @@ db.exec(`
   );
 `);
 
+// Дозволяє тестам явно закрити з'єднання перед видаленням тимчасової БД
+db.closeForTests = () => db.close();
 module.exports = db;

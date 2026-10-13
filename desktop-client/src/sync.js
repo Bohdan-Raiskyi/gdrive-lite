@@ -58,7 +58,7 @@ function pickNewestByName(list) {
 }
 
 // base - хеш, спільний після минулої синхронізації. Та сама логіка, що і в web-client/src/sync.js
-function decideDirection(base, l, r) {
+export function decideDirection(base, l, r) {
   const localChanged = base === undefined || l.hash !== base;
   const remoteChanged = base === undefined || r.content_hash !== base;
   if (localChanged && !remoteChanged) return "upload";

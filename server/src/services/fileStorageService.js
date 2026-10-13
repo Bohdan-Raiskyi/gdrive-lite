@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const db = require("../db");
 const { hashFile } = require("./hash");
 
-const STORAGE_DIR = path.join(__dirname, "..", "..", "storage");
+const STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, "..", "..", "storage");
 const ALLOWED_FILTERS = ["all", "py", "jpg"];
 
 // ownerId - чий простір, uploaderId - хто завантажив
